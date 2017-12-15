@@ -15,8 +15,6 @@
 package policy
 
 import (
-	"sort"
-
 	"github.com/cilium/cilium/api/v1/models"
 	"github.com/cilium/cilium/pkg/comparator"
 	"github.com/cilium/cilium/pkg/labels"
@@ -65,9 +63,10 @@ func (s *PolicyTestSuite) TestIngressCoversDPorts(c *C) {
 	policy = L4Policy{
 		Ingress: L4PolicyMap{
 			"8080/TCP": {
-				Port:     8080,
-				Protocol: api.ProtoTCP,
-				Ingress:  true,
+				Port:             8080,
+				Protocol:         api.ProtoTCP,
+				Ingress:          true,
+				DerivedFromRules: []labels.LabelArray{},
 			},
 		},
 	}
@@ -84,9 +83,10 @@ func (s *PolicyTestSuite) TestEgressCoversDPorts(c *C) {
 	policy = L4Policy{
 		Egress: L4PolicyMap{
 			"8080/TCP": {
-				Port:     8080,
-				Protocol: api.ProtoTCP,
-				Ingress:  false,
+				Port:             8080,
+				Protocol:         api.ProtoTCP,
+				Ingress:          false,
+				DerivedFromRules: []labels.LabelArray{},
 			},
 		},
 	}
@@ -115,7 +115,7 @@ func (s *PolicyTestSuite) TestCreateL4Filter(c *C) {
 			// a single L7 rule whether the selector is wildcarded
 			// or if it is based on specific labels.
 			filter := CreateL4Filter(eps, portrule, tuple,
-				direction, tuple.Protocol)
+				direction, tuple.Protocol, nil)
 			c.Assert(len(filter.L7RulesPerEp), Equals, 1)
 		}
 	}
@@ -172,12 +172,16 @@ func (s *PolicyTestSuite) TestJSONMarshal(c *C) {
 	model = policy.GetModel()
 	c.Assert(model, NotNil)
 
-	expected := `[{
+	expectedEgress := []string{`{
   "port": 8080,
   "protocol": "TCP"
-}]`
-	c.Assert(pretty.Sprintf("%+ v", model.Egress), comparator.DeepEquals, expected)
-	expected = `[{
+}`}
+	c.Assert(len(expectedEgress), Equals, len(model.Egress))
+	for i := range expectedEgress {
+		c.Assert(model.Egress[i].Rule, Equals, expectedEgress[i])
+	}
+
+	expectedIngress := []string{`{
   "port": 80,
   "protocol": "TCP",
   "l7-rules": [
@@ -192,7 +196,8 @@ func (s *PolicyTestSuite) TestJSONMarshal(c *C) {
       }
     }
   ]
-} {
+}`,
+		`{
   "port": 8080,
   "protocol": "TCP",
   "l7-rules": [
@@ -221,9 +226,9 @@ func (s *PolicyTestSuite) TestJSONMarshal(c *C) {
       }
     }
   ]
-}]`
-	var result sort.StringSlice
-	result = model.Ingress
-	result.Sort()
-	c.Assert(pretty.Sprintf("%+ v", result), comparator.DeepEquals, expected)
+}`}
+	c.Assert(len(expectedIngress), Equals, len(model.Ingress))
+	for i := range expectedIngress {
+		c.Assert(model.Ingress[i].Rule, Equals, expectedIngress[i])
+	}
 }
